@@ -659,3 +659,21 @@ input {
     height: 62px;
   }
 }
+
+.quick-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.chat-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.quick-chip:disabled,
+.chat-submit:disabled,
+.chat-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

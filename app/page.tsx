@@ -82,6 +82,19 @@ export default function Home() {
   const [chatOpen, setChatOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  const requestLock = useRef(false);
+  const inFlightQuestionRef = useRef<string | null>(null);
+  const lastSentRef = useRef<{ text: string; at: number }>({
+    text: "",
+    at: 0,
+  });
+
+  function normalizeQuestion(value: string) {
+    return value.trim().replace(/\s+/g, " ");
+  }
+
+  
+
   useEffect(() => {
     let savedSession = localStorage.getItem("nola_assist_session");
 
@@ -102,10 +115,29 @@ export default function Home() {
   }, [messages, loading, chatOpen]);
 
   async function sendMessage(question: string) {
-  const cleanQuestion = question.trim();
-  if (!cleanQuestion || loading) return;
+  const cleanQuestion = normalizeQuestion(question);
+  const now = Date.now();
+
+  if (!cleanQuestion) return;
+  if (requestLock.current || loading) return;
+  if (inFlightQuestionRef.current === cleanQuestion) return;
+
+  if (
+    lastSentRef.current.text === cleanQuestion &&
+    now - lastSentRef.current.at < 2500
+  ) {
+    return;
+  }
+
+  requestLock.current = true;
+  inFlightQuestionRef.current = cleanQuestion;
+  lastSentRef.current = {
+    text: cleanQuestion,
+    at: now,
+  };
 
   setChatOpen(true);
+  setLoading(true);
 
   const currentSessionId =
     sessionId ||
@@ -128,7 +160,6 @@ export default function Home() {
   ]);
 
   setInput("");
-  setLoading(true);
 
   try {
     const response = await fetch(process.env.NEXT_PUBLIC_N8N_CHAT_URL || "", {
@@ -165,6 +196,8 @@ export default function Home() {
     ]);
   } finally {
     setLoading(false);
+    requestLock.current = false;
+    inFlightQuestionRef.current = null;
   }
 }
 
@@ -172,69 +205,6 @@ export default function Home() {
   e?.preventDefault();
   await sendMessage(input);
 
-
-    const question = input.trim();
-    if (!question || loading) return;
-
-    const currentSessionId =
-      sessionId ||
-      (typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `session-${Date.now()}`);
-
-    if (!sessionId) {
-      setSessionId(currentSessionId);
-      localStorage.setItem("nola_assist_session", currentSessionId);
-    }
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `user-${Date.now()}`,
-        role: "user",
-        text: question,
-      },
-    ]);
-
-    setInput("");
-    setLoading(true);
-
-    try {
-      const response = await fetch(process.env.NEXT_PUBLIC_N8N_CHAT_URL || "", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "sendMessage",
-          sessionId: currentSessionId,
-          chatInput: question,
-        }),
-      });
-
-      const raw = await response.text();
-      const answer = extractResponse(raw);
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          text: answer || "Não foi possível gerar a resposta no momento.",
-        },
-      ]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-error-${Date.now()}`,
-          role: "assistant",
-          text: "Ocorreu um erro ao consultar o assistente. Tente novamente.",
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
   }
 
   return (
@@ -365,6 +335,7 @@ export default function Home() {
                 type="button"
                 className="quick-chip"
                 onClick={() => sendMessage(question)}
+                disabled={loading || requestLock.current}
               >
                 {question}
               </button>
@@ -395,11 +366,16 @@ export default function Home() {
 
         <form className="chat-widget-input" onSubmit={handleSend}>
           <input
+            className="chat-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Digite sua dúvida aqui"
+            
           />
-          <button type="submit" disabled={loading}>
+          <button type="submit" 
+          className="chat-submit"
+          disabled={loading || requestLock.current}
+          >
             ➤
           </button>
         </form>
